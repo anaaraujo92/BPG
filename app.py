@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from fpdf import FPDF
 
 # Function to calculate dilution and weighing
 def calculate_preparation(target_concentration, final_volume, weighing_range):
@@ -8,28 +9,40 @@ def calculate_preparation(target_concentration, final_volume, weighing_range):
     
     return ideal_weight, min_weight, max_weight
 
-# Function to determine preparation based on validation parameter
-def get_preparation_details(validation_parameter, target_concentration, final_volume):
-    details = ""
-    if validation_parameter == "Selectivity":
-        details = ("Prepare blank solution, standard solution, and sample solutions with impurities spiked at their MLD levels.\n"
-                   "Ensure no interference is observed between the blank, excipients, and peaks of interest.")
-    elif validation_parameter == "Accuracy":
-        details = ("Prepare 'as is' sample solutions and three independent samples spiked with impurities at LOQ, target concentration, "
-                   "and 120% of the maximum defined limit. Maintain excipients at target concentration.")
-    elif validation_parameter == "Repeatability":
-        details = ("Prepare six independent sample solutions at target concentration. If no quantifiable impurities are observed, "
-                   "spike samples with impurities at their maximum limit.")
-    elif validation_parameter == "Stability of Solutions":
-        details = ("Inject the sample solution immediately after preparation (T0) and at intervals (12h, 24h, 48h) to assess stability. "
-                   "Spiked samples should be used if no quantifiable impurities are observed.")
-    return details
+# Function to determine preparation based on validation parameters
+def get_preparation_details(validation_parameters):
+    details = {
+        "Selectivity": "Prepare blank solution, standard solution, and sample solutions with impurities spiked at their MLD levels.\n"
+                      "Ensure no interference is observed between the blank, excipients, and peaks of interest.",
+        "Accuracy": "Prepare 'as is' sample solutions and three independent samples spiked with impurities at LOQ, target concentration, "
+                    "and 120% of the maximum defined limit. Maintain excipients at target concentration.",
+        "Repeatability": "Prepare six independent sample solutions at target concentration. If no quantifiable impurities are observed, "
+                        "spike samples with impurities at their maximum limit.",
+        "Stability of Solutions": "Inject the sample solution immediately after preparation (T0) and at intervals (12h, 24h, 48h) to assess stability. "
+                                 "Spiked samples should be used if no quantifiable impurities are observed.",
+        "Linearity": "Prepare standard solutions at five different concentrations, covering 50% to 150% of the method's target concentration.",
+        "Robustness": "Assess variations in analytical conditions, such as column temperature, flow rate, and mobile phase composition."
+    }
+    return "\n".join([details.get(param, "No details available.") for param in validation_parameters])
+
+# Function to generate PDF report
+def generate_pdf(description):
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, "Bench Plan Report", ln=True, align="C")
+    pdf.ln(10)
+    pdf.multi_cell(0, 10, description)
+    output_pdf = "Generated_Bench_Plan.pdf"
+    pdf.output(output_pdf)
+    return output_pdf
 
 # Streamlit interface
 st.title("Bench Plan Generator for Method Validation")
 
 # User inputs
-validation_parameter = st.selectbox("Select Validation Parameter:", ["Selectivity", "Accuracy", "Repeatability", "Stability of Solutions"])
+validation_parameters = st.multiselect("Select Validation Parameters:", ["Selectivity", "Accuracy", "Repeatability", "Stability of Solutions", "Linearity", "Robustness"])
 solution_type = st.selectbox("Select Solution Type:", ["Sample As Is", "Spiked Sample", "Standard", "Placebo"])
 target_concentration = st.number_input("Enter Target Concentration (mg/mL):", min_value=0.0, format="%.4f")
 final_volume = st.number_input("Enter Final Volume (mL):", min_value=0.0, format="%.2f")
@@ -42,7 +55,7 @@ weighing_range = (target_concentration * 0.90 * final_volume,
 # Generate preparation details
 if st.button("Generate Bench Plan"):
     ideal_weight, min_weight, max_weight = calculate_preparation(target_concentration, final_volume, weighing_range)
-    validation_details = get_preparation_details(validation_parameter, target_concentration, final_volume)
+    validation_details = get_preparation_details(validation_parameters)
     
     description = (f"For {solution_type}, weigh {ideal_weight:.2f} mg "
                    f"(allowed range: {min_weight:.2f} mg to {max_weight:.2f} mg) "
@@ -55,14 +68,25 @@ if st.button("Generate Bench Plan"):
     ])
     
     # Save to Excel
-    output_file = "Generated_Bench_Plan.xlsx"
-    bench_plan.to_excel(output_file, index=False)
+    output_excel = "Generated_Bench_Plan.xlsx"
+    bench_plan.to_excel(output_excel, index=False)
     
-    # Download button
-    with open(output_file, "rb") as f:
+    # Generate PDF
+    output_pdf = generate_pdf(description)
+    
+    # Download buttons
+    with open(output_excel, "rb") as f:
         st.download_button(
-            label="📥 Download Generated Bench Plan",
+            label="📥 Download Bench Plan (Excel)",
             data=f,
             file_name="Generated_Bench_Plan.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+    with open(output_pdf, "rb") as f:
+        st.download_button(
+            label="📥 Download Bench Plan (PDF)",
+            data=f,
+            file_name="Generated_Bench_Plan.pdf",
+            mime="application/pdf"
         )
