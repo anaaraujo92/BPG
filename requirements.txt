@@ -1,9 +1,6 @@
 streamlit
 pandas
 openpyxl
-lxml
-io
-re
-itertools
-numpy
 fpdf
+lxml
+numpy
