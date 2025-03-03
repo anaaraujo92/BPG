@@ -1,3 +1,10 @@
 streamlit
 pandas
 openpyxl
+fpdf
+zipfile
+lxml
+io
+re
+itertools
+numpy
