@@ -4,3 +4,4 @@ openpyxl
 fpdf
 lxml
 numpy
+docx
