@@ -910,7 +910,7 @@ if docx_file:
                     paragraph += f"\nStock II for {row['Name']} Solution:\nDilute {row['p1']} mL from Stock I into {row['V2']} mL volumetric flask and complete to volume."
         return paragraph
     paragraphs = df_selt2.apply(generate_paragraph_text, axis=1)
-    st.title("Generated Paragraphs for Method Validation")
+    st.title("Benchwork Plan for Method Validation")
     for paragraph in paragraphs:
         st.text(paragraph + "\n")
 else:
