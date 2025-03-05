@@ -82,7 +82,6 @@ if docx_file:
     })
     search_text = "in relation to"
     TC_std_df_w = extract_specific_table(docx_file, search_text)
-
     if TC_std_df_w:
         for row in TC_std_df_w:
             print(row)
@@ -121,7 +120,6 @@ if docx_file:
     imp_df['imp_lod'] = pd.to_numeric(imp_df['imp_lod'], errors='coerce')
     imp_df.info()
     target_tags = ["imp_spec_u_unit"]
-
     imp_df_u_data = extract_content_controls(docx_file, target_tags)
     imp_df_u = pd.DataFrame({
         "imp_spec_u_unit": imp_df_u_data["imp_spec_u_unit"]
@@ -159,7 +157,6 @@ if docx_file:
     excip_tc_df_w = df[['Name', 'excip_tc','df_sam']]
     excip_tc_df = pd.concat([excip_tc_df_w, excip_tc_df], axis=1)
     excip_tc_df['excip_tc'] = pd.to_numeric(excip_tc_df['excip_tc'], errors='coerce')
-    
     def extraction_parameter(docx_file, word):
         """
         Function to find a specific word in a cell and divide the content in paragraphs.
@@ -324,10 +321,10 @@ if docx_file:
                 return [None] * len(row['spiked'])
         return [None] * len(row['spiked'])
     df_sel['tc_spiking'] = df_sel.apply(modify_tc_spiking, axis=1)
-    def extraction_accuracy(doc_path):
+    def extraction_accuracy(docx_file):
         """
         Function to locate 'Accuracy' and extract paragraohs tant contains "For known" and "For Unknwon" without include them.
-        :param doc_path: document path.
+        :param docx_file: document path.
         :return: DataFrame with paragraohs.
         """
         if not docx_file or not isinstance(docx_file, io.BytesIO):
@@ -580,37 +577,42 @@ if docx_file:
     df_info[['tc', 'tc_unit']] = df_info.apply(add_tc_and_unit, axis=1)
     def add_sam_tc(row, sam_tc_value):
         if row['Category'] in ['sam', 'std']:
-            return row['tc']  
-            return sam_tc_value  
-    # Check the first tc for sam value 
-    first_sam_tc = df_sel[df_sel['Category'] == 'sam'].iloc[0]['tc']
-    df_sel['sam_tc'] = df_sel.apply(lambda row: add_sam_tc(row, first_sam_tc), axis=1)
-    # Merge df_selt adn df_info
-    df_sel = pd.merge(df_sel, df_info[['name', 'w','range','unit', 'Potency', 'CF', 'V1','V2','V3','p1', 'p2']], left_on='Name', right_on='name', how='left')
-    df_sel.drop('name', axis=1, inplace=True)
+            return row['tc']
+        else:
+            return sam_tc_value
+    df_selt=df_sel.copy()
+    first_sam_tc = df_selt[df_selt['Category'] == 'sam'].iloc[0]['tc']
+    df_selt['sam_tc'] = df_selt.apply(lambda row: add_sam_tc(row, first_sam_tc), axis=1)
+    # Merge df_selt and df_info
+    df_selt = pd.merge(df_selt, df_info[['name', 'w','range','unit', 'Potency', 'CF', 'V1','V2','V3','p1', 'p2']], left_on='Name', right_on='name', how='left')
+    df_selt.drop('name', axis=1, inplace=True)
+    # Função para garantir que os valores sejam numéricos, convertendo strings em números
     def to_numeric(value):
-        '''Function to garantee that all values are numeric and not strings'''
         try:
-            return pd.to_numeric(value, errors='coerce')
+            return pd.to_numeric(value, errors='coerce')  # 'coerce' converte valores inválidos para NaN
         except ValueError:
             return None
+
+    # Função para calcular DF_sel para a categoria 'imp'
     def calculate_df_sel(row):
-        '''Function to calculate the dilution factor for impurities'''
         if row['Category'] == 'imp':  
             sam_tc=row['sam_tc']
             tc=row['tc']
             w=row['w']
+
             df_sel_value=w*100/(tc*sam_tc)
             return df_sel_value
         else:
-            return None
-    df_sel['DF_sel'] = df_sel.apply(calculate_df_sel, axis=1)
+            return None  # Retorna None para outras categorias
+    df_selt['DF_sel'] = df_selt.apply(calculate_df_sel, axis=1)
+    # Filtrar VFs entre 10 e 250 e pipettes entre 0.5 e 10
     VF = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000]
     VF = [v for v in VF if 10 <= v <= 250]
     pipettes = [0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 15, 20, 25, 50]
     pipettes = [p for p in pipettes if 0.5 <= p <= 10]
+
+    # Função para calcular o fator de diluição
     def calculate_dilution_factor(vf_comb, pipette_comb):
-        '''Function to achieve dilutions factors'''
         vf_product = 1
         pipette_product = 1
         for vf in vf_comb:
@@ -621,16 +623,19 @@ if docx_file:
         
         dilution_factor = vf_product / pipette_product
         return dilution_factor
+
+    # Função para calcular a incerteza
     def calculate_uncertainty(vf_comb, pipette_comb):
-        '''Function to calculate uncertainty'''
         uncertainty = 0
         for i in range(len(pipette_comb)):
             uncertainty += abs(pipette_comb[i] - vf_comb[i + 1]) / vf_comb[i + 1]
         return uncertainty
+
+    # Função para encontrar as combinações que resultam no fator de diluição desejado e minimizam a incerteza
     def find_best_dilution_combinations(target_factor):
-        '''Function to find the best dilutions combinations based on uncertainty'''
         best_combination = None
         best_uncertainty = float('inf')
+        
         for num_vfs in range(2, len(VF)+1):
             vf_combinations = itertools.combinations(VF, num_vfs)
             for vf_comb in vf_combinations:
@@ -648,60 +653,89 @@ if docx_file:
                             if uncertainty < best_uncertainty:
                                 best_uncertainty = uncertainty
                                 best_combination = (vf_comb, pipette_comb)
+        
         return best_combination
+
+    # Função para ajustar as combinações de VF para cada linha
     def adjust_vf_combination(row, df_selt):
         target_factor = row['DF_sel']
         best_combination = None
-        if row['Category'] in ['std', 'sam']:  # For 'std' e 'sam'
-            vf_comb = [row['V1'], row['V2'], row['V3']]  
-            pipette_comb = [row['p1'], row['p2']]  
+
+        if row['Category'] in ['std', 'sam']:  # Para 'std' e 'sam'
+            # Ajusta as combinações de VF para a categoria 'sam' conforme a lógica
+            vf_comb = [row['V1'], row['V2'], row['V3']]  # Se existir
+            pipette_comb = [row['p1'], row['p2']]  # Se existir
+            
+            # Se V3 for 1, use V2, se V2 for 1, use V1
             if row['V3'] == 1:
                 vf_comb = [row['V2'], row['V1']]
             elif row['V2'] == 1:
                 vf_comb = [row['V1']]
-            vf_comb = [v for v in vf_comb if isinstance(v, (int, float))]  
-            vf_comb = tuple(sorted(vf_comb, reverse=True))  
+            
+            # Garantir que o último valor seja sempre o maior VF
+            vf_comb = [v for v in vf_comb if isinstance(v, (int, float))]  # Remove valores não numéricos
+            vf_comb = tuple(sorted(vf_comb, reverse=True))  # Ordena em ordem decrescente para garantir o maior valor
             best_combination = (target_factor, vf_comb, tuple(pipette_comb))
-        elif row['Category'] == 'imp':
+            
+        elif row['Category'] == 'imp':  # Para 'imp', escolha o maior VF (último valor)
             best_combination = find_best_dilution_combinations(target_factor)
             if best_combination:
                 vf_comb, pipette_comb = best_combination
-                vf_comb = [v for v in vf_comb if isinstance(v, (int, float))]  
-                vf_comb = tuple(sorted(vf_comb, reverse=True))  
+                vf_comb = [v for v in vf_comb if isinstance(v, (int, float))]  # Remove valores não numéricos
+                vf_comb = tuple(sorted(vf_comb, reverse=True))  # Ordena em ordem decrescente para garantir o maior valor
                 best_combination = (target_factor, vf_comb, tuple(pipette_comb))
             else:
                 best_combination = (target_factor, None, None)
+
+        # Garantir que sempre retorne uma tupla, mesmo que vazia
         if not best_combination:
             best_combination = (target_factor, (), ())
-        return best_combination
-    best_combinations = []
-    for index, row in df_sel.iterrows():
-        best_combination = adjust_vf_combination(row, df_sel)
-        best_combinations.append(best_combination)
-    df_sel['Best_VF_combination'] = [comb[1] if comb[1] else () for comb in best_combinations]
-    df_sel['Best_Pipette_combination'] = [comb[2] if comb[2] else () for comb in best_combinations]
 
+        return best_combination
+
+    # Aplicar a função para cada linha do DataFrame
+    best_combinations = []
+
+    for index, row in df_selt.iterrows():
+        best_combination = adjust_vf_combination(row, df_selt)
+        best_combinations.append(best_combination)
+
+    # Limpeza adicional para garantir que as tuplas não tenham valores vazios ('') e consistência com as combinações
+    df_selt['Best_VF_combination'] = [comb[1] if comb[1] else () for comb in best_combinations]
+    df_selt['Best_Pipette_combination'] = [comb[2] if comb[2] else () for comb in best_combinations]
     # Função para realizar as substituições conforme a descrição
     def update_columns_with_combinations(row, df):
-        '''Function to update based on category'''
+        # Para categorias 'imp', 'std', 'sam', utilizar as combinações 'Best_VF_combination' e 'Best_Pipette_combination'
         if row['Category'] in ['imp', 'std', 'sam']:
+            # Substituindo V1, V2, V3 com base nas tuplas de Best_VF_combination
             vf_combination = row['Best_VF_combination']
             p_combination = row['Best_Pipette_combination']
+            
+            # Para V1, V2, V3
             row['V1'] = vf_combination[0] if len(vf_combination) > 0 else ''
             row['V2'] = vf_combination[1] if len(vf_combination) > 1 else ''
             row['V3'] = vf_combination[2] if len(vf_combination) > 2 else ''
+            
+            # Para p1, p2
             row['p1'] = p_combination[0] if len(p_combination) > 0 else ''
             row['p2'] = p_combination[1] if len(p_combination) > 1 else ''
+            
+        # Para a categoria 'excip', substituir pelos valores onde app == Name
         elif row['Category'] == 'excip':
             app_name = row['app']
+            # Buscar a linha correspondente onde Name é igual a app
             app_row = df[df['Name'] == app_name].iloc[0]
+            
+            # Atualizando as colunas V1, V2, V3, p1, p2 com os valores correspondentes
             row['V1'] = app_row['Best_VF_combination'][0] if len(app_row['Best_VF_combination']) > 0 else ''
             row['V2'] = app_row['Best_VF_combination'][1] if len(app_row['Best_VF_combination']) > 1 else ''
             row['V3'] = app_row['Best_VF_combination'][2] if len(app_row['Best_VF_combination']) > 2 else ''
+            
             row['p1'] = app_row['Best_Pipette_combination'][0] if len(app_row['Best_Pipette_combination']) > 0 else ''
             row['p2'] = app_row['Best_Pipette_combination'][1] if len(app_row['Best_Pipette_combination']) > 1 else ''
+            
         return row
-    df_sel = df_sel.apply(lambda row: update_columns_with_combinations(row, df_sel), axis=1)    
+    df_selt = df_selt.apply(lambda row: update_columns_with_combinations(row, df_selt), axis=1)    
     def update_w_for_excip(row):
         if row['Category'] == 'excip' and pd.isnull(row['w']):
             V1 = pd.to_numeric(row['V1'], errors='coerce') if pd.notnull(row['V1']) else 1
@@ -716,7 +750,7 @@ if docx_file:
             p2 = p2 if not pd.isna(p2) else 1
             row['w'] = (V1 * V2 * V3) / (p1 * p2) * row['tc']
         return row
-    df_selt = df_sel.apply(update_w_for_excip, axis=1)
+    df_selt = df_selt.apply(update_w_for_excip, axis=1)
     df_selt['w_tc'] = df_selt['w'] / (df_selt['Potency'] * df_selt['CF'])
     #st.title('Table for excip')
     #st.write(df_selt)
@@ -855,45 +889,64 @@ if docx_file:
         return row
     df_selt2 = df_selt2.apply(add_volume_columns, axis=1)
     #st.write(df_selt2)
+    # Função para gerar o parágrafo baseado na categoria
+    # Função para gerar o parágrafo baseado na categoria
     def generate_paragraph_text(row):
-        paragraph = f"{row['Name_sol']}:\n"  
-        if row['Category'] in ["BLK", "std", "RES"] or (row['Category'] == "sam" and (not row['spiked'] or row['spiked'] == [""])):
+        paragraph = f"{row['Name_sol']}:\n"  # Inicia com o nome completo da linha
+        
+        # Para as categorias "", "std", "RES", ou "sam" com spiked vazio
+        if row['Category'] in ["", "std", "RES"] or (row['Category'] == "sam" and (not row['spiked'] or row['spiked'] == [""])):
             paragraph += "Prepare as per analytical method."
+        
+        # Para a categoria 'imp'
         elif row['Category'] == 'imp':  
-            if pd.notnull(row['D2']):
+            if pd.notnull(row['D2']) and (row['V2']!=1 and row['p1']!=1) :
                 paragraph += f"\nStock I for {row['Name']} Solution:\nWeight {round(row['w_tc'], 2)} mg ({row['w_tc_min']} mg to {row['w_tc_max']} mg) into {row['V1']} mL and complete to volume."
             else:
                 paragraph += f"\n\nWeight {round(row['w_tc'], 2)} mg ({row['w_tc_min']} mg to {row['w_tc_max']} mg) into {row['V1']} mL and complete to volume."
-            if pd.notnull(row['D3']):
+            
+            # Adiciona diluições
+            if pd.notnull(row['D3']) and (row['V3']!=1 and row['p2']!=1):
                 paragraph += f"\n\nStock II for {row['Name']} Solution:\nDilute {row['p1']} mL from Stock I into {row['V2']} mL volumetric flask and complete to volume."
             else:
                 paragraph += f"\n\n{row['Name']} at {row['tc']}% solution:\nDilute {row['p1']} mL from Stock I into {row['V2']} mL volumetric flask and complete to volume."
-            if pd.notnull(row['D3']):
+            if pd.notnull(row['D3']) and (row['V3']!=1 and row['p2']!=1):
                 paragraph += f"\n\n{row['Name']} at {row['tc']}% solution:\nDilute {row['p2']} mL from Stock II into {row['V3']} mL volumetric flask and complete to volume."
+        
+        # Para a categoria 'excip'
+        # Para a categoria 'excip'
         elif row['Category'] == 'excip':
-            if pd.notnull(row['V2']) and row['V2'] == 1 and row['p1'] == 1:
+            if pd.notnull(row['D2']) and row['V2'] == 1 and row['p1'] == 1:
                 paragraph += f"Weight {round(row['w'], 2)} ± 10% into {row['V1']} mL volumetric flask and complete to volume."
             else:
                 paragraph += f"Stock I for {row['Name']} Solution:\nWeight {round(row['w'], 2)} ± 10% into {row['V1']} mL volumetric flask and complete to volume."
-                if pd.notnull(row['V3']) and row['V3'] == 1 and row['p2'] == 1:
+                if pd.notnull(row['D3']) and row['V3'] == 1 and row['p2'] == 1:
                     paragraph += f"\nDilute {row['p2']} mL from Stock I into {row['V2']} mL volumetric flask and complete to volume."
                 else:
                     paragraph += f"\nStock II for {row['Name']} Solution:\nDilute {row['p1']} mL from Stock I into {row['V2']} mL volumetric flask and complete to volume."
+        # Para a categoria 'sam' com impurezas
         elif row['Category'] == 'sam' and row['spiked'] != ['']:
-            stock_spiking_phrases = []  
-            for i in range(1, 100):  
+            stock_spiking_phrases = []  # Lista para armazenar os volumes de spiking
+
+            # Percorre todas as colunas dinâmicas de spiking
+            for i in range(1, 100):  # Assume até 100 spikings para cobrir todas as colunas
                 col_name = f"stock_spiking_solution_{i}_name"
                 col_volume = f"stock_spiking_solution_{i}_volume"
-                col_type = f"stock_spiking_solution_{i}"  
-                if col_name in row and pd.notnull(row[col_name]):  
+                col_type = f"stock_spiking_solution_{i}"  # Verifica se é D1 ou D2
+                
+                if col_name in row and pd.notnull(row[col_name]):  # Se a impureza existir
                     solution_type = "Stock I" if row[col_type] == "D1" else "Stock II"
                     stock_spiking_phrases.append(f"{row[col_volume]} mL of {solution_type} solution for {row[col_name]}")
+
+            # Construção correta da frase dinâmica
             stock_spiking_text = ""
             if stock_spiking_phrases:
                 if len(stock_spiking_phrases) == 1:
                     stock_spiking_text = stock_spiking_phrases[0]
                 else:
                     stock_spiking_text = ", ".join(stock_spiking_phrases[:-1]) + " and " + stock_spiking_phrases[-1]
+
+            # Construção do texto principal
             if pd.notnull(row['V2']) and row['V2'] == 1 and row['p1'] == 1:
                 paragraph += f"\nWeight {round(row['w'], 2)} ± 10% into {row['V1']} mL volumetric flask"
                 if stock_spiking_text:
@@ -903,11 +956,14 @@ if docx_file:
                 paragraph += f"Stock I for {row['Name']} spiked solution:\nWeight {round(row['w'], 2)} ± 10% into {row['V1']} mL volumetric flask"
                 if stock_spiking_text:
                     paragraph += f", add {stock_spiking_text}"
-                paragraph += " and complete to volume."
+                paragraph += " and complete to volume."      
+
+                # Construção da parte de Stock II
                 if pd.notnull(row['V3']) and row['V3'] != 1 and row['p2'] != 1:
                     paragraph += f"\nDilute {row['p2']} mL from Stock I into {row['V2']} mL volumetric flask and complete to volume."
                 else:
                     paragraph += f"\nStock II for {row['Name']} Solution:\nDilute {row['p1']} mL from Stock I into {row['V2']} mL volumetric flask and complete to volume."
+
         return paragraph
     paragraphs = df_selt2.apply(generate_paragraph_text, axis=1)
     st.title("Benchwork Plan for Method Validation")
